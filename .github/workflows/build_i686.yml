@@ -1,0 +1,81 @@
+name: build_i686
+
+on:
+  #schedule:
+    #- cron: '0 23 * * *'
+
+  workflow_dispatch:
+
+jobs:
+
+  Versions:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      qbittorrent: ${{ steps.step1.outputs.o1 }}
+      current: ${{ steps.step2.outputs.o2 }}
+      
+    steps:
+    - name: qbittorrent
+      run: |
+          git clone https://github.com/qbittorrent/qBittorrent.git
+          cd qBittorrent
+          echo "version=$(git tag | grep -v "rc\|beta" | tail -1 | sed 's/^.*-//')" >> $GITHUB_ENV
+    - id: step1
+      run: echo "::set-output name=o1::${{ env.version }}" 
+      
+    - name: current
+      run: echo "version=$(curl $GITHUB_API_URL/repos/$GITHUB_REPOSITORY/tags -s | grep name | sed 's/    "name":\ "//' | sed 's/",//' | sort -V | tail -1)" >> $GITHUB_ENV
+    - id: step2
+      run: echo "::set-output name=o2::${{ env.version }}"
+
+  Build:
+    needs: Versions
+    if: needs.versions.outputs.current != needs.versions.outputs.qbittorrent 
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build docker image
+        run: docker build -t qbittorrent-build .
+
+      - name: Build qBittorrent
+        uses: ./.github/actions/docker-run-save-action
+        with:
+          image: qbittorrent-build
+          run: | 
+            bash /root/qbittorrent-nox-static.sh all -ma x86
+          
+      - name: Create deb
+        uses: ./.github/actions/docker-run-save-action
+        with:
+          image: qbittorrent-build
+          run: bash /root/deb.sh
+
+      - name: Create release files
+        run: |
+          docker run --platform linux/386 --rm --entrypoint cat qbittorrent-build /qbt-build/completed/qbittorrent-nox_${{ needs.versions.outputs.qbittorrent }}-1_i386.deb > qbittorrent-nox_${{ needs.versions.outputs.qbittorrent }}-1_i386.deb
+          echo -e "" > body.txt
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.versions.outputs.qbittorrent }}
+          release_name: qbittorrent-nox-v${{ needs.versions.outputs.qbittorrent }}
+          body_path: body.txt
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./qbittorrent-nox_${{ needs.versions.outputs.qbittorrent }}-1_i386.deb
+          asset_name: qbittorrent-nox_${{ needs.versions.outputs.qbittorrent }}-1_i386.deb
+          asset_content_type: application/zip

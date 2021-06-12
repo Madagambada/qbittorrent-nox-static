@@ -131,7 +131,7 @@ set_default_values() {
 		[[ "${qbt_skip_icu}" != 'no' ]] && delete+=("icu")
 	fi
 	#
-	if [[ ${qbt_cross_name} =~ ^(armhf|armv7|aarch64)$ ]]; then
+	if [[ ${qbt_cross_name} =~ ^(armhf|armv7|aarch64|x86)$ ]]; then
 		alpine_arch="${qbt_cross_name}"
 	else
 		alpine_arch="$(uname -m)"
@@ -265,7 +265,7 @@ while (("${#}")); do
 			shift 2
 			;;
 		-ma | --multi-arch)
-			if [[ -n "${2}" && "${2}" =~ ^(armhf|armv7|aarch64)$ ]]; then
+			if [[ -n "${2}" && "${2}" =~ ^(armhf|armv7|aarch64|x86)$ ]]; then
 				qbt_cross_name="${2}"
 				shift 2
 			else
@@ -425,13 +425,21 @@ set_build_directory() {
 # This function sets some compiler flags globally - b2 settings are set in the ~/user-config.jam  set in the installation_modules function
 #######################################################################################################################################################
 custom_flags_set() {
-	CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard} -static -w -I${include_dir}"
+	if [[ ${qbt_cross_name} =~ ^(x86)$ ]]; then
+		CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard} -static -w -I${include_dir} -m32"
+	else
+		CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard} -static -w -I${include_dir}"
+	fi
 	CPPFLAGS="${optimize/*/$optimize }-static -w -I${include_dir}"
 	LDFLAGS="${optimize/*/$optimize }-static -Wl,--no-as-needed -L${lib_dir} -lpthread -pthread"
 }
 #
 custom_flags_reset() {
-	CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard}"
+	if [[ ${qbt_cross_name} =~ ^(x86)$ ]]; then
+		CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard} -m32"
+	else
+		CXXFLAGS="${optimize/*/$optimize }-std=${cxx_standard}"
+	fi
 	CPPFLAGS="${optimize/*/$optimize }"
 	LDFLAGS=""
 }
@@ -821,7 +829,7 @@ post_command() {
 # Multi Arch
 #######################################################################################################################################################
 _multi_arch() {
-	if [[ "${qbt_cross_name}" =~ ^(armhf|armv7|aarch64)$ ]]; then
+	if [[ "${qbt_cross_name}" =~ ^(armhf|armv7|aarch64|x86)$ ]]; then
 		if [[ "${what_version_codename}" =~ ^(alpine)$ ]]; then
 			echo -e "${tn} ${ugc}${cly} Using Multi Arch: ${qbt_cross_name}${cend}"
 			#
@@ -846,6 +854,13 @@ _multi_arch() {
 					qbt_cross_openssl="linux-aarch64"
 					qbt_cross_boost="arm"
 					qbt_cross_qtbase="linux-aarch64-gnu-g++"
+					;;
+				x86)
+					alpine_arch="x86"
+					qbt_cross_host="i686-linux-musl"
+					qbt_cross_openssl="linux-x86"
+					qbt_cross_boost="gcc-i686"
+					qbt_cross_qtbase="linux-g++-32"
 					;;
 			esac
 			#
@@ -1068,7 +1083,7 @@ while (("${#}")); do
 			shift
 			;;
 		-bs-ma | --boot-strap-multi-arch)
-			if [[ -n "${2}" && "${2}" =~ ^(armhf|armv7|aarch64)$ ]]; then
+			if [[ -n "${2}" && "${2}" =~ ^(armhf|armv7|aarch64|x86)$ ]]; then
 				qbt_cross_name="${2}"
 				shift 2
 			else
@@ -1801,6 +1816,9 @@ if [[ "${!app_name_skip:-yes}" = 'no' ]] || [[ "${1}" = "${app_name}" ]]; then
 			;;
 		aarch64)
 			sed "s|aarch64-linux-gnu|${qbt_cross_host}|g" -i "${qbt_install_dir}/qtbase/mkspecs/linux-aarch64-gnu-g++/qmake.conf"
+			;;
+		x86)
+			sed "s|i686-linux-gnu|${qbt_cross_host}|g" -i "${qbt_install_dir}/qtbase/mkspecs/linux-g++-32/qmake.conf"
 			;;
 	esac
 	#

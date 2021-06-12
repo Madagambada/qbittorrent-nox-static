@@ -1,0 +1,21 @@
+name: 'Docker Run Save Action'
+description: 'Run a command in a container and save it to the image'
+inputs:
+  image:
+    description: 'Name of image'
+    required: true
+  run:
+    description: 'Commands to run'
+    required: false
+  shell:
+    description: 'Shell to use'
+    required: false
+    default: sh
+runs:
+  using: "composite"
+  steps:
+    - run: |
+        docker run --platform linux/386 --name docker.action ${{ inputs.image }} /bin/${{ inputs.shell }} -c "`echo "${{ inputs.run }}" | sed -e 's/\\n/;/g'`"
+        docker commit $(docker ps -n 1 | tail -1 | sed -e 's/   .*//') ${{ inputs.image }} >/dev/null
+        docker container rm $(docker container ls -aq) >/dev/null
+      shell: bash
